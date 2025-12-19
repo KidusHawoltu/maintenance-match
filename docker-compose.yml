@@ -1,0 +1,82 @@
+services:
+  # --- PostgreSQL Database Service ---
+  postgres:
+    image: postgis/postgis:15-3.4
+    container_name: postgres_db
+    environment:
+      - POSTGRES_USER=ds_user
+      - POSTGRES_PASSWORD=ds_pass
+      - POSTGRES_DB=maintenance_match_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ds_user -d maintenance_match_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- Auth Service ---
+  auth:
+    build: ./auth
+    container_name: auth_service
+    ports:
+      - "8081:8081"
+    environment:
+      - DB_URL=jdbc:postgresql://postgres:5432/maintenance_match_db
+      - DB_USER=ds_user
+      - DB_PASS=ds_pass
+      - SERVER_PORT=8081
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # --- Matching Service ---
+  matching:
+    build: ./matching
+    container_name: matching_service
+    ports:
+      - "8082:8082"
+    environment:
+      - DB_URL=jdbc:postgresql://postgres:5432/maintenance_match_db
+      - DB_USER=ds_user
+      - DB_PASS=ds_pass
+      - SERVER_PORT=8082
+      - NOTIFICATION_URL=http://notification:8083
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # --- Notification Service ---
+  notification:
+    build: ./notification
+    container_name: notification_service
+    ports:
+      - "8083:8083"
+    environment:
+      - DB_URL=jdbc:postgresql://postgres:5432/maintenance_match_db
+      - DB_USER=ds_user
+      - DB_PASS=ds_pass
+      - SERVER_PORT=8083
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # --- API Gateway Service ---
+  api-gateway:
+    build: ./api-gateway
+    container_name: api_gateway_service
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_PORT=8080
+      - AUTH_URL=http://auth:8081
+      - MATCHING_URL=http://matching:8082
+      - AUTH_PUBLIC_KEY_URL=http://auth:8081/auth/public-key
+    depends_on:
+      - auth
+      - matching
+
+volumes:
+  postgres_data:
