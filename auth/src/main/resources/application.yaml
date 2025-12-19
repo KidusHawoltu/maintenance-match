@@ -1,0 +1,44 @@
+server:
+  port: 8081
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: auth
+  # --- Database Configuration ---
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/maintenance_match_db}
+    username: ${DB_USER:ds_user}
+    password: ${DB_PASS:ds_pass}
+  # --- JPA & Hibernate Configuration ---
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+# --- Actuator Health Endpoint Configuration ---
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info" # Expose health and info endpoints
+  endpoint:
+    health:
+      show-details: always # Show full details (e.g., DB connection status)
+      probes:
+        enabled: true # Enables Kubernetes-style readiness/liveness probes
+
+# --- Custom Application Properties ---
+app:
+  clients:
+    matching-url: ${MATCHING_URL:http://matching:8082}
+    notification-url: ${NOTIFICATION_URL:http://localhost:8083}
+  jwt:
+    # These should be complex secrets stored in environment variables in production
+    secret-key-path: "keys/private.key" # Path to your RSA private key
+    access-token-expiration-ms: 900000   # 15 minutes
+    refresh-token-expiration-ms: 604800000 # 7 days
+
+
+api-gateway:
+  url: ${API_GATEWAY_URL:http://localhost:8080}
