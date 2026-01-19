@@ -16,7 +16,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/internal/maintainers")
 @RequiredArgsConstructor
-//@Hidden
+@Hidden
 public class MaintainerInternalController {
 
     private final MaintainerRepository maintainerRepository;
