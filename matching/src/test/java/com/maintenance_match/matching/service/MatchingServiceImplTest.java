@@ -2,7 +2,6 @@ package com.maintenance_match.matching.service;
 
 import com.maintenance_match.matching.TestUtils;
 import com.maintenance_match.matching.client.AuthClient;
-import com.maintenance_match.matching.client.NotificationClient;
 import com.maintenance_match.matching.dto.*;
 import com.maintenance_match.matching.exception.CustomAccessDeniedException;
 import com.maintenance_match.matching.model.Job;
@@ -18,6 +17,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -35,7 +36,7 @@ public class MatchingServiceImplTest {
     private MaintainerRepository maintainerRepository;
 
     @Mock
-    private NotificationClient notificationClient;
+        private KafkaTemplate<String, NotificationRequest> kafkaTemplate;
 
     @Mock
     private AuthClient authClient;
@@ -138,6 +139,8 @@ public class MatchingServiceImplTest {
 
         when(authClient.getUserById(any())).thenReturn(new UserDto());
 
+        ReflectionTestUtils.setField(matchingService, "notificationTopic", "notification.send");
+
         // --- When ---
         JobDto resultDto = matchingService.createJob(matchRequest, userId);
 
@@ -154,7 +157,7 @@ public class MatchingServiceImplTest {
         assertThat(resultDto.getId()).isNotNull();
 
         ArgumentCaptor<NotificationRequest> notificationCaptor = ArgumentCaptor.forClass(NotificationRequest.class);
-        verify(notificationClient, times(2)).sendNotification(notificationCaptor.capture());
+        verify(kafkaTemplate, times(2)).send(anyString(), anyString(), notificationCaptor.capture());
 
         List<NotificationRequest> capturedNotifications = notificationCaptor.getAllValues();
         assertThat(capturedNotifications)
@@ -213,6 +216,8 @@ public class MatchingServiceImplTest {
         // Mock the auth client calls for DTO building
         when(authClient.getUserById(any())).thenReturn(new UserDto());
 
+        ReflectionTestUtils.setField(matchingService, "notificationTopic", "notification.send");
+
         // When: The user cancels the job
         matchingService.terminateJob(activeJob.getId(), userId, true);
 
@@ -229,7 +234,7 @@ public class MatchingServiceImplTest {
         assertThat(savedMaintainer.getActiveJobs()).isEqualTo(0);
 
         ArgumentCaptor<NotificationRequest> notificationCaptor = ArgumentCaptor.forClass(NotificationRequest.class);
-        verify(notificationClient, times(2)).sendNotification(notificationCaptor.capture());
+        verify(kafkaTemplate, times(2)).send(anyString(), anyString(), notificationCaptor.capture());
 
         List<NotificationRequest> capturedNotifications = notificationCaptor.getAllValues();
         assertThat(capturedNotifications)

@@ -1,7 +1,6 @@
 package com.maintenance_match.matching.service.impl;
 
 import com.maintenance_match.matching.client.AuthClient;
-import com.maintenance_match.matching.client.NotificationClient;
 import com.maintenance_match.matching.dto.*;
 import com.maintenance_match.matching.exception.BadRequestException;
 import com.maintenance_match.matching.exception.ResourceNotFoundException;
@@ -18,6 +17,8 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,8 +35,11 @@ public class MatchingServiceImpl implements MatchingService {
 
     private final JobRepository jobRepository;
     private final MaintainerRepository maintainerRepository;
-    private final NotificationClient notificationClient;
     private final AuthClient authClient;
+    private final KafkaTemplate<String, NotificationRequest> kafkaTemplate;
+
+    @Value("${app.kafka.topics.notification-send}")
+    private String notificationTopic;
 
     private static final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
 
@@ -226,7 +230,8 @@ public class MatchingServiceImpl implements MatchingService {
                     .userId(recipientId)
                     .message(message)
                     .build();
-            notificationClient.sendNotification(notificationPayload);
+            kafkaTemplate.send(notificationTopic, recipientId.toString(), notificationPayload);
+            log.info("Published notification event for user {}", recipientId);
         } catch (Exception e) {
             log.error("Failed to send notification to user {}: {}", recipientId, e.getMessage());
         }
