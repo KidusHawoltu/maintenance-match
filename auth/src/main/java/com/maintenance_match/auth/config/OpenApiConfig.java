@@ -16,8 +16,17 @@ public class OpenApiConfig {
 
     @Bean
     public OpenAPI customOpenAPI() {
+        final String securitySchemeName = "bearerAuth";
+
         return new OpenAPI()
                 .addServersItem(new Server().url(gatewayUrl).description("API Gateway URL"))
+                .components(new io.swagger.v3.oas.models.Components()
+                                .addSecuritySchemes(securitySchemeName, new io.swagger.v3.oas.models.security.SecurityScheme()
+                                        .name(securitySchemeName)
+                                        .type(io.swagger.v3.oas.models.security.SecurityScheme.Type.HTTP)
+                                        .scheme("bearer")
+                                        .bearerFormat("JWT")))
+                .addSecurityItem(new io.swagger.v3.oas.models.security.SecurityRequirement().addList(securitySchemeName))
                 .info(new Info().title("MaintenanceMatch - Authentication API")
                         .version("v1.0")
                         .description("This API handles user registration, authentication, and token management.")
