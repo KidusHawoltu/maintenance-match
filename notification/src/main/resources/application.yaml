@@ -15,6 +15,9 @@ spring:
         spring.json.use.type.headers: false
         spring.json.value.default.type: com.maintenance_match.notification.dto.NotificationRequest
         spring.json.trusted.packages: com.maintenance_match.notification.dto
+    listener:
+      type: single
+      ack-mode: record
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
@@ -28,7 +31,7 @@ spring:
             enable: true
   # --- Database Configuration ---
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/maintenance_match_db}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/notification_db}
     username: ${DB_USER:ds_user}
     password: ${DB_PASS:ds_pass}
   # --- JPA & Hibernate Configuration ---
@@ -58,3 +61,6 @@ app:
       notification-send: ${NOTIFICATION_TOPIC:notification.send}
   clients:
     auth-url: ${AUTH_URL:http://localhost:8081}
+
+api-gateway:
+  url: ${API_GATEWAY_URL:http://localhost:8080}

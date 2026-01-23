@@ -1,4 +1,4 @@
-package com.maintenance_match.matching.dto;
+package com.maintenance_match.auth.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -11,8 +11,8 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class NotificationRequest {
+public class MaintainerProfileEvent {
     private UUID userId;
-    private UUID maintainerId;
-    private String message;
+    private String name;
+    private String email;
 }

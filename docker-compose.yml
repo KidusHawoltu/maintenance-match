@@ -24,23 +24,67 @@ services:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
-  # --- PostgreSQL Database Service ---
-  postgres:
-    image: postgis/postgis:15-3.4
-    container_name: postgres_db
+  # ------------------------------------------------------------
+  # DATABASES
+  # ------------------------------------------------------------
+
+  # 1. Auth Database
+  auth-db:
+    image: postgres:15-alpine
+    container_name: auth_db
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=root
-      - POSTGRES_DB=maintenance_match_db
+      - POSTGRES_USER=ds_user
+      - POSTGRES_PASSWORD=ds_pass
+      - POSTGRES_DB=auth_db
     ports:
-      - "5433:5432"
+      - "5434:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - auth_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ds_user -d maintenance_match_db"]
+      test: ["CMD-SHELL", "pg_isready -U ds_user -d auth_db"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # 2. Matching Database
+  matching-db:
+    image: postgis/postgis:15-3.4
+    container_name: matching_db
+    environment:
+      - POSTGRES_USER=ds_user
+      - POSTGRES_PASSWORD=ds_pass
+      - POSTGRES_DB=matching_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - matching_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ds_user -d matching_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 3. Notification Database
+  notification-db:
+    image: postgres:15-alpine
+    container_name: notification_db
+    environment:
+      - POSTGRES_USER=ds_user
+      - POSTGRES_PASSWORD=ds_pass
+      - POSTGRES_DB=notification_db
+    ports:
+      - "5436:5432"
+    volumes:
+      - notification_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ds_user -d notification_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ------------------------------------------------------------
+  # MICROSERVICES
+  # ------------------------------------------------------------
 
   # --- Auth Service ---
   auth:
@@ -49,13 +93,22 @@ services:
     ports:
       - "8081:8081"
     environment:
-      - DB_URL=jdbc:postgresql://postgres:5432/maintenance_match_db
+      - DB_URL=jdbc:postgresql://auth-db:5432/auth_db
       - DB_USER=ds_user
       - DB_PASS=ds_pass
       - SERVER_PORT=8081
+      - MATCHING_URL=http://matching:8082
+      - API_GATEWAY_URL=http://localhost:8080
+      - NOTIFICATION_TOPIC=notification.send
+      - MAINTAINER_TOPIC=maintainer-profile-creation
     depends_on:
-      postgres:
+      auth-db:
         condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8081/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   # --- Matching Service ---
   matching:
@@ -64,13 +117,18 @@ services:
     ports:
       - "8082:8082"
     environment:
-      - DB_URL=jdbc:postgresql://postgres:5432/maintenance_match_db
+      - DB_URL=jdbc:postgresql://matching-db:5432/matching_db
       - DB_USER=ds_user
       - DB_PASS=ds_pass
       - SERVER_PORT=8082
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - NOTIFICATION_URL=http://notification:8083
+      - AUTH_URL=http://auth:8081
+      - API_GATEWAY_URL=http://localhost:8080
+      - NOTIFICATION_TOPIC=notification.send
+      - MAINTAINER_TOPIC=maintainer-profile-creation
     depends_on:
-      postgres:
+      matching-db:
         condition: service_healthy
       kafka:
         condition: service_started
@@ -82,13 +140,16 @@ services:
     ports:
       - "8083:8083"
     environment:
-      - DB_URL=jdbc:postgresql://postgres:5432/maintenance_match_db
+      - DB_URL=jdbc:postgresql://notification-db:5432/notification_db
       - DB_USER=ds_user
       - DB_PASS=ds_pass
       - SERVER_PORT=8083
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - AUTH_URL=http://auth:8081
+      - API_GATEWAY_URL=http://localhost:8080
+      - NOTIFICATION_TOPIC=notification.send
     depends_on:
-      postgres:
+      notification-db:
         condition: service_healthy
       kafka:
         condition: service_started
@@ -103,10 +164,30 @@ services:
       - SERVER_PORT=8080
       - AUTH_URL=http://auth:8081
       - MATCHING_URL=http://matching:8082
-      - AUTH_PUBLIC_KEY_URL=http://auth:8081/auth/public-key
+      - AUTH_PUBLIC_KEY_URL=http://auth:8081/api/auth/public-key
+      - NOTIFICATION_URL=http://notification:8083
     depends_on:
-      - auth
-      - matching
+      auth:
+        condition: service_healthy
+      matching:
+        condition: service_started
+
+  akhq:
+    image: tchiotludo/akhq:latest
+    container_name: akhq_ui
+    environment:
+      AKHQ_CONFIGURATION: |
+        akhq:
+          connections:
+            docker-kafka-cluster:
+              properties:
+                bootstrap.servers: "kafka:9092"
+    ports:
+      - "8888:8080"
+    depends_on:
+      - kafka
 
 volumes:
-  postgres_data:
+  auth_data:
+  matching_data:
+  notification_data:

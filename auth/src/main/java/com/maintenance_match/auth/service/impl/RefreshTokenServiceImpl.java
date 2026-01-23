@@ -55,8 +55,6 @@ public class RefreshTokenServiceImpl implements RefreshTokenService {
 
         User user = refreshToken.getUser();
 
-        refreshTokenRepository.delete(refreshToken);
-
         return this.createRefreshToken(user);
     }
 }

@@ -1,8 +1,6 @@
 package com.maintenance_match.matching.service;
 
-import com.maintenance_match.matching.dto.MaintainerDto;
-import com.maintenance_match.matching.dto.JobDto;
-import com.maintenance_match.matching.dto.MatchRequestDto;
+import com.maintenance_match.matching.dto.*;
 
 import java.util.List;
 import java.util.UUID;
@@ -42,4 +40,12 @@ public interface MatchingService {
      * @return The updated Job as a DTO.
      */
     JobDto terminateJob(UUID jobId, UUID userId, boolean isCancelled);
+
+    /**
+     * Partially updates a maintainer's profile.
+     * @param userId The ID of the user account.
+     * @param request The DTO containing the fields to update.
+     * @return The updated Maintainer profile.
+     */
+    MaintainerDto updateMaintainerProfile(UUID userId, UpdateMaintainerProfileRequest request);
 }

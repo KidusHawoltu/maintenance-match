@@ -23,10 +23,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
-import java.util.Collections;
 
 @Service
 @RequiredArgsConstructor
@@ -36,7 +34,7 @@ public class MatchingServiceImpl implements MatchingService {
     private final JobRepository jobRepository;
     private final MaintainerRepository maintainerRepository;
     private final AuthClient authClient;
-    private final KafkaTemplate<String, NotificationRequest> kafkaTemplate;
+    private final KafkaTemplate<String, NotificationEvent> kafkaTemplate;
 
     @Value("${app.kafka.topics.notification-send}")
     private String notificationTopic;
@@ -69,9 +67,6 @@ public class MatchingServiceImpl implements MatchingService {
 
         // --- Update Maintainer State ---
         maintainer.setActiveJobs(maintainer.getActiveJobs() + 1);
-        if (maintainer.getActiveJobs() >= maintainer.getCapacity()) {
-            maintainer.setAvailable(false);
-        }
         maintainerRepository.save(maintainer);
 
         // --- Create and Save the Job ---
@@ -87,17 +82,21 @@ public class MatchingServiceImpl implements MatchingService {
 
         log.info("Created new job {} for user {} with maintainer {}", savedJob.getId(), userId, maintainer.getId());
 
-        // Notify the user who created the job
-        sendNotification(
-                userId,
-                "Your match with maintainer '" + maintainer.getName() + "' has been confirmed. You can now contact them."
-        );
+        // Notify User (Email + InApp)
+        sendNotification(userId,
+                "Match Confirmed",
+                "Matched with " + maintainer.getName(),
+                "job-matched-user",
+                Map.of("maintainerName", maintainer.getName()),
+                Set.of(NotificationChannel.EMAIL, NotificationChannel.IN_APP));
 
-        // Notify the maintainer who was matched
-        sendNotification(
-                maintainer.getUserId(),
-                "You have a new match! A user needs help with: '" + savedJob.getProblemDescription() + "'."
-        );
+        // Notify Maintainer (Email + InApp)
+        sendNotification(maintainer.getUserId(),
+                "New Job Assigned",
+                "New job: " + savedJob.getProblemDescription(),
+                "job-matched-maintainer",
+                Map.of("problem", savedJob.getProblemDescription()),
+                Set.of(NotificationChannel.EMAIL, NotificationChannel.IN_APP));
 
         return buildJobDto(savedJob);
     }
@@ -172,19 +171,75 @@ public class MatchingServiceImpl implements MatchingService {
         log.info("Job {} has been terminated with status {}. Maintainer {} now has {} active jobs.",
                 updatedJob.getId(), updatedJob.getStatus(), maintainer.getId(), maintainer.getActiveJobs());
 
+        // --- NOTIFICATION LOGIC ---
         UUID customerId = updatedJob.getUserId();
-        String terminatorRole = userId.equals(customerId) ? "The customer" : "The maintainer";
-        if (isCancelled) {
-            sendNotification(customerId, "Job '"+ updatedJob.getProblemDescription() +"' has been cancelled by " + terminatorRole.toLowerCase() + ".");
-            sendNotification(maintainerUserId, "Job '"+ updatedJob.getProblemDescription() +"' has been cancelled by " + terminatorRole.toLowerCase() + ".");
-            log.info("Sent cancellation notifications for job {}", updatedJob.getId());
-        } else {
-            sendNotification(customerId, "Your job '"+ updatedJob.getProblemDescription() +"' has been marked as completed.");
-            sendNotification(maintainerUserId, "Your job '"+ updatedJob.getProblemDescription() +"' has been marked as completed.");
-            log.info("Sent completion notifications for job {}", updatedJob.getId());
-        }
+
+        // Determine Initiator vs Receiver
+        UUID receiverId = userId.equals(customerId) ? maintainerUserId : customerId;
+        String terminatorRole = userId.equals(customerId) ? "customer" : "maintainer";
+
+        String actionVerb = isCancelled ? "cancelled" : "completed";
+
+        // 1. Notify Initiator (IN_APP ONLY)
+        sendNotification(userId,
+                null, // No subject needed for In-App
+                "You have " + actionVerb + " the job: " + updatedJob.getProblemDescription(),
+                null, // No template needed
+                null,
+                Set.of(NotificationChannel.IN_APP));
+
+        // 2. Notify Receiver (EMAIL + IN_APP)
+        sendNotification(receiverId,
+                "Job " + (isCancelled ? "Cancelled" : "Completed"),
+                "The job '" + updatedJob.getProblemDescription() + "' has been " + actionVerb + " by the " + terminatorRole + ".",
+                isCancelled ? "job-cancelled" : "job-completed",
+                Map.of("problem", updatedJob.getProblemDescription(), "role", terminatorRole),
+                Set.of(NotificationChannel.EMAIL, NotificationChannel.IN_APP));
 
         return buildJobDto(updatedJob);
+    }
+
+    @Override
+    @Transactional
+    public MaintainerDto updateMaintainerProfile(UUID userId, UpdateMaintainerProfileRequest request) {
+        log.info("Updating profile for maintainer associated with user ID: {}", userId);
+
+        Maintainer maintainer = maintainerRepository.findByUserId(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Maintainer profile not found for user: " + userId));
+
+        // Update Name if provided
+        if (request.getName() != null) {
+            maintainer.setName(request.getName());
+        }
+
+        // Update Availability if provided
+        if (request.getIsAvailable() != null) {
+            maintainer.setAvailable(request.getIsAvailable());
+        }
+
+        // Update Capacity if provided
+        if (request.getCapacity() != null) {
+            if (request.getCapacity() < 0) {
+                throw new BadRequestException("Capacity cannot be negative.");
+            }
+            maintainer.setCapacity(request.getCapacity());
+
+            // Re-evaluate isAvailable based on new capacity vs active jobs
+            if (maintainer.getActiveJobs() >= maintainer.getCapacity()) {
+                maintainer.setAvailable(false);
+            }
+        }
+
+        // Update Location if both lat and lon are provided
+        if (request.getLatitude() != null && request.getLongitude() != null) {
+            Point newLocation = geometryFactory.createPoint(new Coordinate(request.getLongitude(), request.getLatitude()));
+            maintainer.setLocation(newLocation);
+        }
+
+        Maintainer updatedMaintainer = maintainerRepository.save(maintainer);
+        log.info("Maintainer profile updated successfully.");
+
+        return MaintainerDto.fromEntity(updatedMaintainer);
     }
 
     /**
@@ -224,16 +279,36 @@ public class MatchingServiceImpl implements MatchingService {
     /**
      * Private helper method to encapsulate the notification sending logic.
      */
-    private void sendNotification(UUID recipientId, String message) {
+    private void sendNotification(UUID recipientId, String subject, String textMessage, String template, Map<String, Object> vars, Set<NotificationChannel> channels) {
         try {
-            NotificationRequest notificationPayload = NotificationRequest.builder()
-                    .userId(recipientId)
-                    .message(message)
-                    .build();
-            kafkaTemplate.send(notificationTopic, recipientId.toString(), notificationPayload);
-            log.info("Published notification event for user {}", recipientId);
+            String idStr = recipientId.toString();
+
+            // 1. In-App Notification
+            if (channels.contains(NotificationChannel.IN_APP)) {
+                NotificationEvent inAppEvent = NotificationEvent.builder()
+                        .eventId(UUID.randomUUID())
+                        .recipientId(idStr)
+                        .channel(NotificationChannel.IN_APP)
+                        .message(textMessage)
+                        .build();
+                kafkaTemplate.send(notificationTopic, idStr, inAppEvent);
+            }
+
+            // 2. Email Notification
+            if (channels.contains(NotificationChannel.EMAIL)) {
+                NotificationEvent emailEvent = NotificationEvent.builder()
+                        .eventId(UUID.randomUUID())
+                        .recipientId(idStr)
+                        .channel(NotificationChannel.EMAIL)
+                        .subject(subject)
+                        .template(template)
+                        .variables(vars)
+                        .build();
+                kafkaTemplate.send(notificationTopic, idStr, emailEvent);
+            }
+
         } catch (Exception e) {
-            log.error("Failed to send notification to user {}: {}", recipientId, e.getMessage());
+            log.error("Failed to send notification to user {}", recipientId, e);
         }
     }
 }

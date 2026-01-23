@@ -1,9 +1,8 @@
 package com.maintenance_match.matching.controller;
 
-import com.maintenance_match.matching.dto.JobDto;
-import com.maintenance_match.matching.dto.MaintainerDto;
-import com.maintenance_match.matching.dto.MatchRequestDto;
+import com.maintenance_match.matching.dto.*;
 import com.maintenance_match.matching.exception.BadRequestException;
+import com.maintenance_match.matching.exception.CustomAccessDeniedException;
 import com.maintenance_match.matching.service.MatchingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -45,10 +44,10 @@ public class MatchingController {
     @Operation(summary = "Create a new job (match with a maintainer)", description = "Initiated by a user after selecting a maintainer from the search results.")
     public ResponseEntity<JobDto> createJob(
             @Valid @RequestBody MatchRequestDto matchRequest,
-            @Parameter(hidden = true) @RequestHeader(value = "X-User-ID", required = false) String userIdHeader,
-            @RequestParam(value = "userId", required = false) UUID userIdParam) {
+            @Parameter(hidden = true) @RequestHeader(value = "X-User-ID", required = false) String userIdHeader
+            ) {
 
-        UUID userId = resolveUserId(userIdHeader, userIdParam);
+        UUID userId = UUID.fromString(userIdHeader);
         JobDto createdJob = matchingService.createJob(matchRequest, userId);
         return new ResponseEntity<>(createdJob, HttpStatus.CREATED);
     }
@@ -57,13 +56,10 @@ public class MatchingController {
     @Operation(summary = "Get all jobs for the current user", description = "Returns a list of all active and past jobs for the authenticated user (works for both USERS and MAINTAINERS).")
     public ResponseEntity<List<JobDto>> getMyJobs(
             @Parameter(hidden = true) @RequestHeader(value = "X-User-ID", required = false) String userIdHeader,
-            @Parameter(hidden = true) @RequestHeader(value = "X-User-Role", required = false) String userRole,
-            @RequestParam(value = "userId", required = false) UUID userIdParam,
-            @RequestParam(value = "role", required = false) String roleParam) {
-
-        UUID userId = resolveUserId(userIdHeader, userIdParam);
-        String resolvedRole = resolveUserRole(userRole, roleParam);
-        List<JobDto> jobs = matchingService.getMyJobs(userId, resolvedRole);
+            @Parameter(hidden = true) @RequestHeader(value = "X-User-Role", required = false) String userRole
+    ) {
+        UUID userId = UUID.fromString(userIdHeader);
+        List<JobDto> jobs = matchingService.getMyJobs(userId, userRole);
         return ResponseEntity.ok(jobs);
     }
 
@@ -71,10 +67,10 @@ public class MatchingController {
     @Operation(summary = "Mark a job as completed", description = "Can be initiated by either the user or the maintainer in the job.")
     public ResponseEntity<JobDto> completeJob(
             @PathVariable UUID jobId,
-            @Parameter(hidden = true) @RequestHeader(value = "X-User-ID", required = false) String userIdHeader,
-            @RequestParam(value = "userId", required = false) UUID userIdParam) {
+            @Parameter(hidden = true) @RequestHeader(value = "X-User-ID", required = false) String userIdHeader
+    ) {
 
-        UUID userId = resolveUserId(userIdHeader, userIdParam);
+        UUID userId = UUID.fromString(userIdHeader);
         JobDto updatedJob = matchingService.terminateJob(jobId, userId, false); // isCancelled = false
         return ResponseEntity.ok(updatedJob);
     }
@@ -83,31 +79,28 @@ public class MatchingController {
     @Operation(summary = "Cancel an active job", description = "Can be initiated by either the user or the maintainer in the job.")
     public ResponseEntity<JobDto> cancelJob(
             @PathVariable UUID jobId,
-            @Parameter(hidden = true) @RequestHeader(value = "X-User-ID", required = false) String userIdHeader,
-            @RequestParam(value = "userId", required = false) UUID userIdParam) {
+            @Parameter(hidden = true) @RequestHeader(value = "X-User-ID", required = false) String userIdHeader
+    ) {
 
-        UUID userId = resolveUserId(userIdHeader, userIdParam);
+        UUID userId = UUID.fromString(userIdHeader);
         JobDto updatedJob = matchingService.terminateJob(jobId, userId, true); // isCancelled = true
         return ResponseEntity.ok(updatedJob);
     }
 
-    private UUID resolveUserId(String userIdHeader, UUID userIdParam) {
-        if (userIdHeader != null && !userIdHeader.isBlank()) {
-            return UUID.fromString(userIdHeader);
-        }
-        if (userIdParam != null) {
-            return userIdParam;
-        }
-        throw new BadRequestException("Missing user identifier. Provide X-User-ID header or userId query parameter.");
-    }
+    @PatchMapping("/maintainers/me")
+    @Operation(summary = "Partially update maintainer profile",
+            description = "Allows maintainers to update their name, availability, capacity, or location.")
+    public ResponseEntity<MaintainerDto> updateProfile(
+            @RequestBody UpdateMaintainerProfileRequest request,
+            @Parameter(hidden = true) @RequestHeader("X-User-ID") String userIdHeader,
+            @Parameter(hidden = true) @RequestHeader("X-User-Role") String userRole) {
 
-    private String resolveUserRole(String userRoleHeader, String userRoleParam) {
-        if (userRoleHeader != null && !userRoleHeader.isBlank()) {
-            return userRoleHeader;
+        if (!"MAINTAINER".equalsIgnoreCase(userRole)) {
+            throw new CustomAccessDeniedException("Only maintainers can update their professional profile.");
         }
-        if (userRoleParam != null && !userRoleParam.isBlank()) {
-            return userRoleParam;
-        }
-        throw new BadRequestException("Missing user role. Provide X-User-Role header or role query parameter.");
+
+        UUID userId = UUID.fromString(userIdHeader);
+        MaintainerDto updated = matchingService.updateMaintainerProfile(userId, request);
+        return ResponseEntity.ok(updated);
     }
 }

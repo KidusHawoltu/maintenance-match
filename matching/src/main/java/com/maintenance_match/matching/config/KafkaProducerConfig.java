@@ -1,6 +1,6 @@
 package com.maintenance_match.matching.config;
 
-import com.maintenance_match.matching.dto.NotificationRequest;
+import com.maintenance_match.matching.dto.NotificationEvent;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
@@ -18,8 +18,8 @@ import java.util.Map;
 public class KafkaProducerConfig {
 
     @Bean
-    public ProducerFactory<String, NotificationRequest> notificationProducerFactory(KafkaProperties kafkaProperties) {
-        Map<String, Object> props = new HashMap<>(kafkaProperties.buildProducerProperties());
+    public ProducerFactory<String, NotificationEvent> notificationProducerFactory(KafkaProperties kafkaProperties) {
+        Map<String, Object> props = new HashMap<>(kafkaProperties.buildProducerProperties(null));
         props.putIfAbsent(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         props.putIfAbsent(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
         props.putIfAbsent(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
@@ -27,8 +27,8 @@ public class KafkaProducerConfig {
     }
 
     @Bean
-    public KafkaTemplate<String, NotificationRequest> notificationKafkaTemplate(
-            ProducerFactory<String, NotificationRequest> notificationProducerFactory) {
+    public KafkaTemplate<String, NotificationEvent> notificationKafkaTemplate(
+            ProducerFactory<String, NotificationEvent> notificationProducerFactory) {
         return new KafkaTemplate<>(notificationProducerFactory);
     }
 }

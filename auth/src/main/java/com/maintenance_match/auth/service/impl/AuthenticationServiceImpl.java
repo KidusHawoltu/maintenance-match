@@ -1,9 +1,6 @@
 package com.maintenance_match.auth.service.impl;
 
-import com.maintenance_match.auth.dto.JwtAuthenticationResponse;
-import com.maintenance_match.auth.dto.LoginRequest;
-import com.maintenance_match.auth.dto.RefreshTokenRequest;
-import com.maintenance_match.auth.dto.SignUpRequest;
+import com.maintenance_match.auth.dto.*;
 import com.maintenance_match.auth.exception.BadRequestException;
 import com.maintenance_match.auth.model.ApprovalStatus;
 import com.maintenance_match.auth.model.RefreshToken;
@@ -14,10 +11,15 @@ import com.maintenance_match.auth.service.AuthenticationService;
 import com.maintenance_match.auth.service.JwtService;
 import com.maintenance_match.auth.service.RefreshTokenService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.util.Map;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -28,6 +30,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
+
+    @Value("${app.kafka.topics.notification-send}")
+    private String notificationTopic;
 
     @Override
     public JwtAuthenticationResponse signUpUser(SignUpRequest signUpRequest) {
@@ -49,6 +55,15 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         // A regular user is logged in immediately after signing up
         String accessToken = jwtService.generateToken(user);
         RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
+
+        // --- SEND WELCOME NOTIFICATION ---
+        sendNotification(
+                user.getId(),
+                "Welcome to MaintenanceMatch!",
+                "Welcome " + user.getFirstName() + ", your account has been created successfully.",
+                "welcome-email", // We will create this template later
+                Map.of("name", user.getFirstName())
+        );
 
         return JwtAuthenticationResponse.builder()
                 .accessToken(accessToken)
@@ -73,6 +88,15 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                 .approvalStatus(ApprovalStatus.PENDING) // Awaiting approval
                 .build();
         userRepository.save(user);
+
+        // --- SEND APPLICATION RECEIVED NOTIFICATION ---
+        sendNotification(
+                user.getId(),
+                "Application Received",
+                "Your maintainer application has been received and is pending approval.",
+                "maintainer-signup",
+                Map.of("name", user.getFirstName())
+        );
     }
 
     @Override
@@ -103,5 +127,30 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                 .accessToken(newAccessToken)
                 .refreshToken(refreshToken.getToken())
                 .build();
+    }
+
+    // --- HELPER METHOD TO SEND SPLIT EVENTS ---
+    private void sendNotification(UUID userId, String subject, String textMessage, String template, Map<String, Object> vars) {
+        String recipientId = userId.toString();
+
+        // 1. In-App Notification (DB Persist)
+        NotificationEvent inAppEvent = NotificationEvent.builder()
+                .eventId(UUID.randomUUID())
+                .recipientId(recipientId)
+                .channel(NotificationChannel.IN_APP)
+                .message(textMessage)
+                .build();
+        kafkaTemplate.send(notificationTopic, recipientId, inAppEvent);
+
+        // 2. Email Notification
+        NotificationEvent emailEvent = NotificationEvent.builder()
+                .eventId(UUID.randomUUID())
+                .recipientId(recipientId)
+                .channel(NotificationChannel.EMAIL)
+                .subject(subject)
+                .template(template)
+                .variables(vars)
+                .build();
+        kafkaTemplate.send(notificationTopic, recipientId, emailEvent);
     }
 }

@@ -1,32 +1,15 @@
 package com.maintenance_match.notification.client;
 
 import com.maintenance_match.notification.dto.UserDto;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 
 import java.util.UUID;
 
-@Service
-@RequiredArgsConstructor
-@Slf4j
-public class AuthClient {
+@FeignClient(name = "auth-client", url = "${app.clients.auth-url}")
+public interface AuthClient {
 
-    private final RestTemplate restTemplate;
-
-    @Value("${app.clients.auth-url}")
-    private String authUrl;
-
-    public UserDto getUserById(UUID userId) {
-        String url = String.format("%s/api/internal/users/%s", authUrl, userId);
-        try {
-            return restTemplate.getForObject(url, UserDto.class);
-        } catch (RestClientException ex) {
-            log.warn("Failed to fetch user {} from auth service: {}", userId, ex.getMessage());
-            return null;
-        }
-    }
+    @GetMapping("/api/internal/users/{userId}")
+    UserDto getUserById(@PathVariable("userId") UUID userId);
 }

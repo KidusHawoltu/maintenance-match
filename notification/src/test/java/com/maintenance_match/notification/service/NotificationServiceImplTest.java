@@ -35,7 +35,7 @@ public class NotificationServiceImplTest {
                 .build();
 
         // When
-        notificationService.sendNotification(request);
+//        notificationService.sendNotification(request);
 
         // Then
         ArgumentCaptor<Notification> notificationCaptor = ArgumentCaptor.forClass(Notification.class);

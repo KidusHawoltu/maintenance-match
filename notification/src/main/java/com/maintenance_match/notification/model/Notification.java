@@ -22,6 +22,9 @@ public class Notification {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(unique = true, nullable = false)
+    private UUID eventId;
+
     @Column(nullable = false)
     private UUID recipientId;
 

@@ -19,7 +19,7 @@ public class OpenApiConfig {
         final String securitySchemeName = "bearerAuth";
 
         return new OpenAPI()
-                .addServersItem(new Server().url(gatewayUrl).description("API Gateway URL"))
+//                .addServersItem(new Server().url(gatewayUrl).description("API Gateway URL"))
                 .components(new io.swagger.v3.oas.models.Components()
                                 .addSecuritySchemes(securitySchemeName, new io.swagger.v3.oas.models.security.SecurityScheme()
                                         .name(securitySchemeName)

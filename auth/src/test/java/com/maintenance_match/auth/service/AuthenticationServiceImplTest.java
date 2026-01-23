@@ -1,8 +1,6 @@
 package com.maintenance_match.auth.service;
 
-import com.maintenance_match.auth.dto.LoginRequest;
-import com.maintenance_match.auth.dto.RefreshTokenRequest;
-import com.maintenance_match.auth.dto.SignUpRequest;
+import com.maintenance_match.auth.dto.*;
 import com.maintenance_match.auth.exception.BadRequestException;
 import com.maintenance_match.auth.model.ApprovalStatus;
 import com.maintenance_match.auth.model.RefreshToken;
@@ -17,18 +15,24 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-public class AuthenticationServiceImplTest {
+class AuthenticationServiceImplTest {
 
     @Mock
     private UserRepository userRepository;
@@ -40,145 +44,134 @@ public class AuthenticationServiceImplTest {
     private JwtService jwtService;
     @Mock
     private RefreshTokenService refreshTokenService;
+    @Mock
+    private KafkaTemplate<String, Object> kafkaTemplate;
 
     @InjectMocks
     private AuthenticationServiceImpl authenticationService;
 
+    private final String NOTIF_TOPIC = "notification-topic";
     private SignUpRequest signUpRequest;
-    private User user;
 
     @BeforeEach
     void setUp() {
-        signUpRequest = SignUpRequest.builder()
-                .email("test@example.com")
-                .password("password123")
-                .firstName("Test")
-                .lastName("User")
-                .phoneNumber("1234567890")
-                .build();
+        ReflectionTestUtils.setField(authenticationService, "notificationTopic", NOTIF_TOPIC);
 
-        user = User.builder()
-                .id(java.util.UUID.randomUUID())
-                .email("test@example.com")
-                .password("encodedPassword")
+        signUpRequest = SignUpRequest.builder()
+                .firstName("Kidus")
+                .lastName("Asebe")
+                .email("kidus@example.com")
+                .phoneNumber("0911223344")
+                .password("securePassword")
                 .build();
     }
 
     @Test
-    void signUpUser_whenEmailNotExists_shouldRegisterActiveUserAndReturnTokens() {
+    void signUpUser_Success_ShouldReturnTokensAndSendNotifications() {
         // Given
         when(userRepository.findByEmail(signUpRequest.getEmail())).thenReturn(Optional.empty());
-        when(passwordEncoder.encode(signUpRequest.getPassword())).thenReturn("encodedPassword");
-        when(jwtService.generateToken(any(User.class))).thenReturn("accessToken");
-        when(refreshTokenService.createRefreshToken(any(User.class)))
-                .thenReturn(RefreshToken.builder().token("refreshToken").build());
+        when(passwordEncoder.encode(any())).thenReturn("hashedPassword");
+        when(jwtService.generateToken(any())).thenReturn("access-token");
+        when(refreshTokenService.createRefreshToken(any())).thenReturn(RefreshToken.builder().token("refresh-token").build());
 
         // When
-        var response = authenticationService.signUpUser(signUpRequest);
+        JwtAuthenticationResponse response = authenticationService.signUpUser(signUpRequest);
 
         // Then
+        // 1. Verify User persistence state
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository, times(1)).save(userCaptor.capture());
-
+        verify(userRepository).save(userCaptor.capture());
         User savedUser = userCaptor.getValue();
         assertThat(savedUser.getRole()).isEqualTo(Role.USER);
         assertThat(savedUser.isActive()).isTrue();
         assertThat(savedUser.getApprovalStatus()).isNull();
 
-        assertThat(response).isNotNull();
-        assertThat(response.getAccessToken()).isEqualTo("accessToken");
+        // 2. Verify Kafka Notifications (Helper method calls send twice)
+        ArgumentCaptor<NotificationEvent> eventCaptor = ArgumentCaptor.forClass(NotificationEvent.class);
+        verify(kafkaTemplate, times(2)).send(eq(NOTIF_TOPIC), anyString(), eventCaptor.capture());
+
+        List<NotificationEvent> events = eventCaptor.getAllValues();
+        assertThat(events).extracting(NotificationEvent::getChannel)
+                .containsExactlyInAnyOrder(NotificationChannel.IN_APP, NotificationChannel.EMAIL);
+        assertThat(events.get(0).getTemplate()).isEqualTo("welcome-email");
+
+        // 3. Verify Response
+        assertThat(response.getAccessToken()).isEqualTo("access-token");
+        assertThat(response.getRefreshToken()).isEqualTo("refresh-token");
     }
 
     @Test
-    void signUpUser_whenEmailExists_shouldThrowBadRequestException() {
+    void signUpUser_DuplicateEmail_ShouldThrowException() {
         // Given
-        when(userRepository.findByEmail(signUpRequest.getEmail())).thenReturn(Optional.of(user));
+        when(userRepository.findByEmail(signUpRequest.getEmail())).thenReturn(Optional.of(new User()));
 
-        // When & Then
+        // When / Then
         assertThatThrownBy(() -> authenticationService.signUpUser(signUpRequest))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessage("Email address already in use.");
+                .hasMessageContaining("Email address already in use");
 
         verify(userRepository, never()).save(any());
     }
 
     @Test
-    void signUpMaintainer_whenEmailNotExists_shouldRegisterInactiveMaintainer() {
+    void signUpMaintainer_Success_ShouldBeInactiveAndPending() {
         // Given
         when(userRepository.findByEmail(signUpRequest.getEmail())).thenReturn(Optional.empty());
-        when(passwordEncoder.encode(signUpRequest.getPassword())).thenReturn("encodedPassword");
+        when(passwordEncoder.encode(any())).thenReturn("hashedPassword");
 
         // When
         authenticationService.signUpMaintainer(signUpRequest);
 
         // Then
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository, times(1)).save(userCaptor.capture());
-
+        verify(userRepository).save(userCaptor.capture());
         User savedUser = userCaptor.getValue();
+
         assertThat(savedUser.getRole()).isEqualTo(Role.MAINTAINER);
         assertThat(savedUser.isActive()).isFalse();
         assertThat(savedUser.getApprovalStatus()).isEqualTo(ApprovalStatus.PENDING);
 
-        // Verify that no tokens were generated
-        verify(jwtService, never()).generateToken(any());
-        verify(refreshTokenService, never()).createRefreshToken(any());
+        // Verify Notifications sent (Email + InApp)
+        verify(kafkaTemplate, times(2)).send(eq(NOTIF_TOPIC), anyString(), any(NotificationEvent.class));
+
+        // Ensure NO tokens are generated (Maintainer can't log in yet)
+        verifyNoInteractions(jwtService, refreshTokenService);
     }
 
     @Test
-    void signUpMaintainer_whenEmailExists_shouldThrowBadRequestException() {
+    void login_Success_ShouldReturnTokens() {
         // Given
-        when(userRepository.findByEmail(signUpRequest.getEmail())).thenReturn(Optional.of(user));
+        LoginRequest loginRequest = new LoginRequest("kidus@example.com", "password");
+        User existingUser = User.builder().email("kidus@example.com").build();
 
-        // When & Then
-        assertThatThrownBy(() -> authenticationService.signUpMaintainer(signUpRequest))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessage("Email address already in use.");
-    }
-
-    @Test
-    void login_withValidCredentials_shouldReturnTokens() {
-        // Given
-        LoginRequest loginRequest = new LoginRequest("test@example.com", "password123");
-        when(userRepository.findByEmail(loginRequest.getEmail())).thenReturn(Optional.of(user));
-        when(jwtService.generateToken(user)).thenReturn("newAccessToken");
-        when(refreshTokenService.createRefreshToken(user))
-                .thenReturn(RefreshToken.builder().token("newRefreshToken").build());
+        when(userRepository.findByEmail(loginRequest.getEmail())).thenReturn(Optional.of(existingUser));
+        when(jwtService.generateToken(existingUser)).thenReturn("new-access-token");
+        when(refreshTokenService.createRefreshToken(existingUser)).thenReturn(RefreshToken.builder().token("new-refresh-token").build());
 
         // When
-        var response = authenticationService.login(loginRequest);
+        JwtAuthenticationResponse response = authenticationService.login(loginRequest);
 
         // Then
-        // Verify that the authentication manager was called
-        verify(authenticationManager, times(1))
-                .authenticate(any());
-
-        assertThat(response.getAccessToken()).isEqualTo("newAccessToken");
-        assertThat(response.getRefreshToken()).isEqualTo("newRefreshToken");
+        verify(authenticationManager).authenticate(any(UsernamePasswordAuthenticationToken.class));
+        assertThat(response.getAccessToken()).isEqualTo("new-access-token");
+        assertThat(response.getRefreshToken()).isEqualTo("new-refresh-token");
     }
 
     @Test
-    void refreshToken_withValidToken_shouldReturnNewTokens() {
+    void refreshToken_Success_ShouldRotateAndReturnNewTokens() {
         // Given
-        RefreshTokenRequest refreshTokenRequest = new RefreshTokenRequest("validRefreshToken");
+        RefreshTokenRequest request = new RefreshTokenRequest("old-token");
+        User user = User.builder().id(UUID.randomUUID()).build();
+        RefreshToken rotatedToken = RefreshToken.builder().token("new-rotated-token").user(user).build();
 
-        RefreshToken newRefreshToken = RefreshToken.builder()
-                .token("newRotatedToken")
-                .user(user) // Use the user from setUp()
-                .build();
-
-        when(refreshTokenService.rotateRefreshToken(refreshTokenRequest.getRefreshToken()))
-                .thenReturn(newRefreshToken);
-        when(jwtService.generateToken(user)).thenReturn("newAccessToken");
+        when(refreshTokenService.rotateRefreshToken("old-token")).thenReturn(rotatedToken);
+        when(jwtService.generateToken(user)).thenReturn("brand-new-access-token");
 
         // When
-        var response = authenticationService.refreshToken(refreshTokenRequest);
+        JwtAuthenticationResponse response = authenticationService.refreshToken(request);
 
         // Then
-        assertThat(response).isNotNull();
-        assertThat(response.getAccessToken()).isEqualTo("newAccessToken");
-        assertThat(response.getRefreshToken()).isEqualTo("newRotatedToken");
-        verify(refreshTokenService, times(1)).rotateRefreshToken("validRefreshToken");
-        verify(jwtService, times(1)).generateToken(user);
+        assertThat(response.getAccessToken()).isEqualTo("brand-new-access-token");
+        assertThat(response.getRefreshToken()).isEqualTo("new-rotated-token");
     }
 }

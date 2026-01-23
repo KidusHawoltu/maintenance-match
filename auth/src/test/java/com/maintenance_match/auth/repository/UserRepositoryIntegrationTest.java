@@ -13,7 +13,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class UserRepositoryIntegrationTest extends AbstractIntegrationTest {
+class UserRepositoryIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private UserRepository userRepository;
@@ -24,85 +24,67 @@ public class UserRepositoryIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void whenFindByEmail_andUserExists_thenReturnsUser() {
+    void findByEmail_shouldReturnUser_whenUserExists() {
         // Given
         User user = User.builder()
                 .email("test@example.com")
-                .password("password")
+                .password("encoded_pass")
                 .firstName("John")
                 .lastName("Doe")
-                .phoneNumber("1234567890")
+                .phoneNumber("123456789")
                 .role(Role.USER)
+                .isActive(true)
                 .build();
         userRepository.save(user);
 
         // When
-        Optional<User> foundUser = userRepository.findByEmail("test@example.com");
+        Optional<User> result = userRepository.findByEmail("test@example.com");
 
         // Then
-        assertThat(foundUser).isPresent();
-        assertThat(foundUser.get().getEmail()).isEqualTo("test@example.com");
-        assertThat(foundUser.get().getRole()).isEqualTo(Role.USER);
-        assertThat(foundUser.get().getPhoneNumber()).isEqualTo("1234567890");
+        assertThat(result).isPresent();
+        assertThat(result.get().getEmail()).isEqualTo("test@example.com");
+        assertThat(result.get().getFirstName()).isEqualTo("John");
     }
 
     @Test
-    void whenFindByEmail_andUserDoesNotExist_thenReturnsEmpty() {
+    void findByEmail_shouldReturnEmpty_whenUserDoesNotExist() {
         // When
-        Optional<User> foundUser = userRepository.findByEmail("nonexistent@example.com");
+        Optional<User> result = userRepository.findByEmail("notfound@example.com");
 
         // Then
-        assertThat(foundUser).isNotPresent();
+        assertThat(result).isNotPresent();
     }
 
     @Test
-    void findByApprovalStatus_shouldReturnOnlyUsersWithThatStatus() {
-        // --- Given ---
-        User pendingMaintainer = User.builder()
-                .email("pending@example.com").password("pw").phoneNumber("111")
-                .role(Role.MAINTAINER).approvalStatus(ApprovalStatus.PENDING).isActive(false)
-                .build();
+    void findByApprovalStatus_shouldReturnListOfUsers() {
+        // Given
+        User m1 = User.builder().email("m1@test.com").password("p").phoneNumber("1").role(Role.MAINTAINER)
+                .approvalStatus(ApprovalStatus.PENDING).isActive(false).build();
+        User m2 = User.builder().email("m2@test.com").password("p").phoneNumber("2").role(Role.MAINTAINER)
+                .approvalStatus(ApprovalStatus.PENDING).isActive(false).build();
+        User m3 = User.builder().email("m3@test.com").password("p").phoneNumber("3").role(Role.MAINTAINER)
+                .approvalStatus(ApprovalStatus.APPROVED).isActive(true).build();
 
-        User anotherPendingMaintainer = User.builder()
-                .email("pending2@example.com").password("pw").phoneNumber("222")
-                .role(Role.MAINTAINER).approvalStatus(ApprovalStatus.PENDING).isActive(false)
-                .build();
+        userRepository.saveAll(List.of(m1, m2, m3));
 
-        User approvedMaintainer = User.builder()
-                .email("approved@example.com").password("pw").phoneNumber("333")
-                .role(Role.MAINTAINER).approvalStatus(ApprovalStatus.APPROVED).isActive(true)
-                .build();
+        // When
+        List<User> pendingUsers = userRepository.findByApprovalStatus(ApprovalStatus.PENDING);
+        List<User> approvedUsers = userRepository.findByApprovalStatus(ApprovalStatus.APPROVED);
 
-        User regularUser = User.builder()
-                .email("user@example.com").password("pw").phoneNumber("444")
-                .role(Role.USER).approvalStatus(null) // Regular users have no status
-                .build();
+        // Then
+        assertThat(pendingUsers).hasSize(2);
+        assertThat(pendingUsers).extracting(User::getEmail).containsExactlyInAnyOrder("m1@test.com", "m2@test.com");
 
-        userRepository.saveAll(List.of(pendingMaintainer, anotherPendingMaintainer, approvedMaintainer, regularUser));
-
-        // --- When ---
-        List<User> foundUsers = userRepository.findByApprovalStatus(ApprovalStatus.PENDING);
-
-        // --- Then ---
-        assertThat(foundUsers).hasSize(2);
-        assertThat(foundUsers)
-                .extracting(User::getEmail)
-                .containsExactlyInAnyOrder("pending@example.com", "pending2@example.com");
+        assertThat(approvedUsers).hasSize(1);
+        assertThat(approvedUsers.get(0).getEmail()).isEqualTo("m3@test.com");
     }
 
     @Test
-    void findByApprovalStatus_whenNoUsersMatch_shouldReturnEmptyList() {
-        // --- Given ---
-        User pendingMaintainer = User.builder()
-                .email("pending@example.com").password("pw").phoneNumber("111")
-                .role(Role.MAINTAINER).approvalStatus(ApprovalStatus.PENDING).isActive(false)
-                .build();
-        userRepository.save(pendingMaintainer);
+    void findByApprovalStatus_shouldReturnEmptyList_whenNoMatches() {
+        // When
+        List<User> result = userRepository.findByApprovalStatus(ApprovalStatus.REJECTED);
 
-        // --- When ---
-        List<User> foundUsers = userRepository.findByApprovalStatus(ApprovalStatus.REJECTED);
-
-        // --- Then ---
-        assertThat(foundUsers).isEmpty();
+        // Then
+        assertThat(result).isEmpty();
     }
 }
