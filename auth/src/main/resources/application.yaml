@@ -5,9 +5,15 @@ server:
 spring:
   application:
     name: auth
+  # --- Kafka Configurations ---
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
   # --- Database Configuration ---
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/maintenance_match_db}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/auth_db}
     username: ${DB_USER:ds_user}
     password: ${DB_PASS:ds_pass}
   # --- JPA & Hibernate Configuration ---
@@ -30,12 +36,15 @@ management:
 
 # --- Custom Application Properties ---
 app:
+  kafka:
+    topics:
+      notification-send: ${NOTIFICATION_TOPIC:notification.send}
+      maintainer-profile-creation: ${MAINTAINER_TOPIC:maintainer-profile-creation}
   clients:
-    matching-url: ${MATCHING_URL:http://matching:8082}
+    matching-url: ${MATCHING_URL:http://localhost:8082}
     notification-url: ${NOTIFICATION_URL:http://localhost:8083}
   jwt:
-    # These should be complex secrets stored in environment variables in production
-    secret-key-path: "keys/private.key" # Path to your RSA private key
+    secret-key-path: "keys/private.key"
     access-token-expiration-ms: 900000   # 15 minutes
     refresh-token-expiration-ms: 604800000 # 7 days
 

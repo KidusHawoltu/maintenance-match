@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-app
+  namespace: maintenance-match
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification
+  template:
+    metadata:
+      labels:
+        app: notification
+    spec:
+      containers:
+        - name: notification
+          image: kidushawoltu/ds-mm-notification:v1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8083
+          env:
+            - name: DB_URL
+              valueFrom: { configMapKeyRef: { name: mm-config, key: NOTIFICATION_DB_URL } }
+            - name: DB_USER
+              valueFrom: { configMapKeyRef: { name: mm-config, key: DB_USER } }
+            - name: DB_PASS
+              valueFrom: { secretKeyRef: { name: mm-secrets, key: DB_PASS } }
+            - name: MAIL_PASSWORD
+              valueFrom: { secretKeyRef: { name: mm-secrets, key: MAIL_PASSWORD } }
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom: { configMapKeyRef: { name: mm-config, key: KAFKA_BOOTSTRAP_SERVERS } }
+            - name: AUTH_URL
+              valueFrom: { configMapKeyRef: { name: mm-config, key: AUTH_URL } }
+            - name: SERVER_PORT
+              value: "8083"
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8083 }
+            initialDelaySeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-svc
+  namespace: maintenance-match
+spec:
+  selector:
+    app: notification
+  ports:
+    - port: 8083
+      targetPort: 8083

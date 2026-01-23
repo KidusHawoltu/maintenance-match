@@ -1,0 +1,143 @@
+# 1. Auth Database
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-db-svc
+  namespace: maintenance-match
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: auth-db
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: auth-db
+  namespace: maintenance-match
+spec:
+  serviceName: "auth-db-svc"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-db
+  template:
+    metadata:
+      labels:
+        app: auth-db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          env:
+            - name: POSTGRES_DB
+              value: "auth_db"
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: mm-config
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mm-secrets
+                  key: DB_PASS
+          ports:
+            - containerPort: 5432
+
+# 2. Matching Database (PostGIS)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: matching-db-svc
+  namespace: maintenance-match
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: matching-db
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: matching-db
+  namespace: maintenance-match
+spec:
+  serviceName: "matching-db-svc"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: matching-db
+  template:
+    metadata:
+      labels:
+        app: matching-db
+    spec:
+      containers:
+        - name: postgis
+          image: postgis/postgis:15-3.4
+          # platform: linux/arm64 # Enable if on Mac M1/M2/M3
+          env:
+            - name: POSTGRES_DB
+              value: "matching_db"
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: mm-config
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mm-secrets
+                  key: DB_PASS
+          ports:
+            - containerPort: 5432
+
+# 3. Notification Database
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-db-svc
+  namespace: maintenance-match
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: notification-db
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: notification-db
+  namespace: maintenance-match
+spec:
+  serviceName: "notification-db-svc"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-db
+  template:
+    metadata:
+      labels:
+        app: notification-db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          env:
+            - name: POSTGRES_DB
+              value: "notification_db"
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: mm-config
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mm-secrets
+                  key: DB_PASS
+          ports:
+            - containerPort: 5432

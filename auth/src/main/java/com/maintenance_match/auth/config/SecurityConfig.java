@@ -1,5 +1,7 @@
 package com.maintenance_match.auth.config;
 
+import com.maintenance_match.auth.filter.GatewayHeaderFilter;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import com.maintenance_match.auth.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -26,8 +28,8 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
 
     private final UserRepository userRepository;
+    private final GatewayHeaderFilter gatewayHeaderFilter;
 
-    // Define all public URLs in one place for readability
     private static final String[] PUBLIC_URLS = {
             "/api/auth/signup/user",
             "/api/auth/signup/maintainer",
@@ -36,7 +38,8 @@ public class SecurityConfig {
             "/api/auth/public-key",
             "/swagger-ui/**",
             "/swagger-ui.html",
-            "/v3/api-docs/**"
+            "/v3/api-docs/**",
+            "/actuator/**"
     };
 
     @Bean
@@ -47,12 +50,13 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         // Permit all requests to our public URLs
                         .requestMatchers(PUBLIC_URLS).permitAll()
-                        // Deny any direct access to internal endpoints (defense-in-depth)
-                        .requestMatchers("/api/internal/**").denyAll()
-                        // All other requests (like /api/admin/**) must be authenticated.
-                        // Specific role checks will be handled by @PreAuthorize.
+                        .requestMatchers("/api/internal/**").permitAll()
+                        // Admin endpoints need ADMIN role
+                        .requestMatchers("/api/auth/admin/**").hasAuthority("ADMIN")
+                        // All other requests must be authenticated.
                         .anyRequest().authenticated()
-                );
+                )
+                .addFilterBefore(gatewayHeaderFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
@@ -70,8 +74,8 @@ public class SecurityConfig {
 
     @Bean
     public AuthenticationProvider authenticationProvider() {
-        // More explicit configuration style
-        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider(userDetailsService());
+        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
+        authProvider.setUserDetailsService(userDetailsService());
         authProvider.setPasswordEncoder(passwordEncoder());
         return authProvider;
     }

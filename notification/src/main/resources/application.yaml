@@ -1,12 +1,38 @@
 server:
   port: 8083
+  forward-headers-strategy: framework
 
 spring:
   application:
     name: notification
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: notification-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: com.maintenance_match.notification.dto.NotificationRequest
+        spring.json.trusted.packages: com.maintenance_match.notification.dto
+    listener:
+      type: single
+      ack-mode: record
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:kalkidanamare11a@gmail.com}
+    password: ${MAIL_PASSWORD:jcwf vfzi njtd rayo}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
   # --- Database Configuration ---
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/maintenance_match_db}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/notification_db}
     username: ${DB_USER:ds_user}
     password: ${DB_PASS:ds_pass}
   # --- JPA & Hibernate Configuration ---
@@ -26,3 +52,16 @@ management:
       show-details: always
       probes:
         enabled: true
+
+app:
+  mail:
+    from: ${MAIL_FROM:kalkidanamare11a@gmail.com}
+    enabled: ${MAIL_ENABLED:true}
+  kafka:
+    topics:
+      notification-send: ${NOTIFICATION_TOPIC:notification.send}
+  clients:
+    auth-url: ${AUTH_URL:http://localhost:8081}
+
+api-gateway:
+  url: ${API_GATEWAY_URL:http://localhost:8080}

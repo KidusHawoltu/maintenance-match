@@ -1,5 +1,6 @@
 server:
   port: 8080
+  forward-headers-strategy: framework
 
 spring:
   application:
@@ -9,46 +10,46 @@ spring:
     web-application-type: reactive
   cloud:
     gateway:
-      server:
-        webflux:
-          forwarded:
-            enabled: true
-          routes:
-            # Route to the Authentication Service
-            - id: auth-route
-              uri: ${AUTH_URL:http://localhost:8081}
-              predicates:
-                - Path=/api/auth/**
+      forwarded:
+        enabled: true
+      routes:
+        # Route to the Authentication Service
+        - id: swagger-auth
+          uri: ${AUTH_URL:http://localhost:8081}
+          predicates:
+            - Path=/swagger/auth/**
+          filters:
+            - RewritePath=/swagger/auth/(?<segment>.*), /${segment}
+            - AuthenticationFilter
 
-            - id: swagger-auth
-              uri: ${AUTH_URL:http://localhost:8081}
-              predicates:
-                - Path=/swagger/auth/**
-              filters:
-                - RewritePath=/swagger/auth/(?<segment>.*), /${segment}
+        # Route to the Matching Service
+        - id: swagger-matching
+          uri: ${MATCHING_URL:http://localhost:8082}
+          predicates:
+            - Path=/swagger/matching/**
+          filters:
+            - RewritePath=/swagger/matching/(?<segment>.*), /${segment}
+            - AuthenticationFilter
 
-            # Route to the Matching Service
-            - id: matching-route
-              uri: ${MATCHING_URL:http://localhost:8082}
-              predicates:
-                - Path=/api/matching/**
-
-            - id: swagger-matching
-              uri: ${MATCHING_URL:http://localhost:8082}
-              predicates:
-                - Path=/swagger/matching/**
-              filters:
-                - RewritePath=/swagger/matching/(?<segment>.*), /${segment}
+        # Route to Notification Service
+        - id: swagger-notification
+          uri: ${NOTIFICATION_URL:http://localhost:8083}
+          predicates:
+            - Path=/swagger/notification/**
+          filters:
+            - RewritePath=/swagger/notification/(?<segment>.*), /${segment}
+            - AuthenticationFilter
 
 springdoc:
   swagger-ui:
-    # Define the URLs for each microservice's OpenAPI spec
     urls:
       - name: Auth API
         url: /swagger/auth/v3/api-docs
       - name: Matching API
         url: /swagger/matching/v3/api-docs
-  # This part helps the UI group the endpoints correctly
+      - name: Notification API
+        url: /swagger/notification/v3/api-docs
+
   api-docs:
     path: /v3/api-docs
     groups:
@@ -83,4 +84,4 @@ logging:
 app:
   clients:
     # URL to fetch the public key for JWT validation
-    auth-public-key-url: ${AUTH_PUBLIC_KEY_URL:http://localhost:8081/auth/public-key}
+    auth-public-key-url: ${AUTH_PUBLIC_KEY_URL:http://localhost:8081/api/auth/public-key}

@@ -10,9 +10,11 @@ import java.util.UUID;
 @Repository
 public interface NotificationRepository extends JpaRepository<Notification, UUID> {
 
-    // Find all unread notifications for a specific user
     List<Notification> findByRecipientIdAndIsReadFalseOrderByCreatedAtDesc(UUID recipientId);
 
-    // Find all notifications for a user (for a history view)
     List<Notification> findByRecipientIdOrderByCreatedAtDesc(UUID recipientId);
+
+    long countByRecipientIdAndIsReadFalse(UUID recipientId);
+
+    boolean existsByEventId(UUID eventId);
 }

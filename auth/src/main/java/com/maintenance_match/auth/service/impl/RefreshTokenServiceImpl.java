@@ -24,6 +24,7 @@ public class RefreshTokenServiceImpl implements RefreshTokenService {
 
     @Override
     public RefreshToken createRefreshToken(User user) {
+        refreshTokenRepository.findByUser(user).ifPresent(refreshTokenRepository::delete);
         RefreshToken refreshToken = RefreshToken.builder()
                 .user(user)
                 .expiryDate(Instant.now().plusMillis(refreshTokenDurationMs))
@@ -53,8 +54,6 @@ public class RefreshTokenServiceImpl implements RefreshTokenService {
                 .orElseThrow(() -> new TokenRefreshException(oldToken, "Refresh token not found or expired."));
 
         User user = refreshToken.getUser();
-
-        refreshTokenRepository.delete(refreshToken);
 
         return this.createRefreshToken(user);
     }

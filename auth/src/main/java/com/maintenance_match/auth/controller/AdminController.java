@@ -4,7 +4,6 @@ import com.maintenance_match.auth.dto.AdminUserView;
 import com.maintenance_match.auth.service.AdminService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -13,7 +12,6 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/auth/admin")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('ADMIN')")
 public class AdminController {
 
     private final AdminService adminService;
@@ -29,17 +27,20 @@ public class AdminController {
     }
 
     @PostMapping("/maintainers/{userId}/approve")
-    public ResponseEntity<AdminUserView> approveMaintainer(@PathVariable UUID userId) {
+    public ResponseEntity<AdminUserView> approveMaintainer(
+            @PathVariable UUID userId) {
         return ResponseEntity.ok(adminService.approveMaintainer(userId));
     }
 
     @PostMapping("/maintainers/{userId}/reject")
-    public ResponseEntity<AdminUserView> rejectMaintainer(@PathVariable UUID userId) {
+    public ResponseEntity<AdminUserView> rejectMaintainer(
+            @PathVariable UUID userId) {
         return ResponseEntity.ok(adminService.rejectMaintainer(userId));
     }
 
     @PutMapping("/users/{userId}/disable")
-    public ResponseEntity<AdminUserView> disableUser(@PathVariable UUID userId) {
+    public ResponseEntity<AdminUserView> disableUser(
+            @PathVariable UUID userId) {
         return ResponseEntity.ok(adminService.disableUser(userId));
     }
 }

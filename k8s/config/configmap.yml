@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mm-config
+  namespace: maintenance-match
+data:
+  # Database Configuration
+  DB_USER: "ds_user"
+  AUTH_DB_URL: "jdbc:postgresql://auth-db-svc:5432/auth_db"
+  MATCHING_DB_URL: "jdbc:postgresql://matching-db-svc:5432/matching_db"
+  NOTIFICATION_DB_URL: "jdbc:postgresql://notification-db-svc:5432/notification_db"
+
+  # Kafka Configuration
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-svc:9092"
+  NOTIFICATION_TOPIC: "notification.send"
+  MAINTAINER_TOPIC: "maintainer-profile-creation"
+
+  # Internal Service-to-Service URLs
+  AUTH_URL: "http://auth-svc:8081"
+  MATCHING_URL: "http://matching-svc:8082"
+  NOTIFICATION_URL: "http://notification-svc:8083"
+
+  # API Gateway Internal usage
+  AUTH_PUBLIC_KEY_URL: "http://auth-svc:8081/api/auth/public-key"
+
+  # External URL for Swagger Redirection
+  API_GATEWAY_URL: "http://localhost:30080"
+
+  # Email Configuration (Non-sensitive parts)
+  MAIL_HOST: "smtp.gmail.com"
+  MAIL_PORT: "587"
+  MAIL_FROM: "kalkidanamare11a@gmail.com"
+  MAIL_ENABLED: "true"
